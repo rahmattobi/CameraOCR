@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:html' as html; // Only for Flutter Web
+import 'dart:typed_data';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final cameras = await availableCameras();
-
   final firstCamera = cameras.first;
 
   runApp(
@@ -19,12 +22,12 @@ Future<void> main() async {
 }
 
 class TakePictureScreen extends StatefulWidget {
+  final CameraDescription camera;
+
   const TakePictureScreen({
     super.key,
     required this.camera,
   });
-
-  final CameraDescription camera;
 
   @override
   TakePictureScreenState createState() => TakePictureScreenState();
@@ -37,12 +40,10 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   @override
   void initState() {
     super.initState();
-   
     _controller = CameraController(
       widget.camera,
       ResolutionPreset.veryHigh,
     );
-
     _initializeControllerFuture = _controller.initialize();
   }
 
@@ -50,6 +51,23 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<String> _convertBlobToBase64(String blobUrl) async {
+    // Mengambil Blob dari URL
+    final response = await html.HttpRequest.request(
+      blobUrl,
+      responseType: 'blob',
+    );
+    final blob = response.response as html.Blob;
+
+    // Membaca Blob sebagai Byte Array
+    final reader = html.FileReader();
+    reader.readAsArrayBuffer(blob);
+    await reader.onLoadEnd.first;
+
+    final data = reader.result as Uint8List;
+    return base64Encode(data);
   }
 
   @override
@@ -72,11 +90,15 @@ class TakePictureScreenState extends State<TakePictureScreen> {
             await _initializeControllerFuture;
             final image = await _controller.takePicture();
 
+            // Convert blob URL to base64
+            final base64Image = await _convertBlobToBase64(image.path);
+            print('Base64 Image: $base64Image');
+
             if (!context.mounted) return;
             await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (context) => DisplayPictureScreen(
-                  imagePath: image.path,
+                  base64Image: base64Image,
                 ),
               ),
             );
@@ -91,15 +113,18 @@ class TakePictureScreenState extends State<TakePictureScreen> {
 }
 
 class DisplayPictureScreen extends StatelessWidget {
-  final String imagePath;
+  final String base64Image;
 
-  const DisplayPictureScreen({super.key, required this.imagePath});
+  const DisplayPictureScreen({super.key, required this.base64Image});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Hasil Tangkapan Camera')),
-      body: Image.network(imagePath),
+      body: Image.memory(
+        base64Decode(base64Image),
+        fit: BoxFit.cover,
+      ),
     );
   }
 }
