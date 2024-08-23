@@ -1,6 +1,8 @@
+// ignore_for_file: avoid_web_libraries_in_flutter, avoid_print
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:html' as html; // Only for Flutter Web
+import 'dart:html' as html; 
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
@@ -54,14 +56,12 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   }
 
   Future<String> _convertBlobToBase64(String blobUrl) async {
-    // Mengambil Blob dari URL
     final response = await html.HttpRequest.request(
       blobUrl,
       responseType: 'blob',
     );
     final blob = response.response as html.Blob;
 
-    // Membaca Blob sebagai Byte Array
     final reader = html.FileReader();
     reader.readAsArrayBuffer(blob);
     await reader.onLoadEnd.first;
@@ -74,39 +74,57 @@ class TakePictureScreenState extends State<TakePictureScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Testing Camera')),
-      body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return CameraPreview(_controller);
-          } else {
-            return const Center(child: CircularProgressIndicator());
-          }
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          try {
-            await _initializeControllerFuture;
-            final image = await _controller.takePicture();
+      body: Stack(
+        children: [
+          FutureBuilder<void>(
+            future: _initializeControllerFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.done) {
+                return LayoutBuilder(
+                  builder: (context, constraints) {
+                    return Center(
+                      child: AspectRatio(
+                        aspectRatio: _controller.value.aspectRatio,
+                        child: CameraPreview(_controller),
+                      ),
+                    );
+                  },
+                );
+              } else {
+                return const Center(child: CircularProgressIndicator());
+              }
+            },
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: FloatingActionButton(
+                onPressed: () async {
+                  try {
+                    await _initializeControllerFuture;
+                    final image = await _controller.takePicture();
 
-            // Convert blob URL to base64
-            final base64Image = await _convertBlobToBase64(image.path);
-            print('Base64 Image: $base64Image');
+                    final base64Image = await _convertBlobToBase64(image.path);
+                    print('Base64 Image: $base64Image');
 
-            if (!context.mounted) return;
-            await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => DisplayPictureScreen(
-                  base64Image: base64Image,
-                ),
+                    if (!context.mounted) return;
+                    await Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => DisplayPictureScreen(
+                          base64Image: base64Image,
+                        ),
+                      ),
+                    );
+                  } catch (e) {
+                    print(e);
+                  }
+                },
+                child: const Icon(Icons.camera_alt),
               ),
-            );
-          } catch (e) {
-            print(e);
-          }
-        },
-        child: const Icon(Icons.camera_alt),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -121,9 +139,62 @@ class DisplayPictureScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Hasil Tangkapan Camera')),
-      body: Image.memory(
-        base64Decode(base64Image),
-        fit: BoxFit.cover,
+      body: Column(
+        children: [
+          Expanded(
+            child: Image.memory(
+              base64Decode(base64Image),
+              fit: BoxFit.cover,
+              width: double.infinity,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    _saveImage(base64Image);
+                  },
+                  child: const Text('Download'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _previewImage(context, base64Image);
+                  },
+                  child: const Text('Preview'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _saveImage(String base64Image) {
+    final bytes = base64Decode(base64Image);
+    final blob = html.Blob([bytes]);
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.AnchorElement(href: url)
+      ..setAttribute("download", "image.png")
+      ..click();
+    html.Url.revokeObjectUrl(url);
+  }
+
+  void _previewImage(BuildContext context, String base64Image) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: const Text('Preview Gambar')),
+          body: Center(
+            child: Image.memory(
+              base64Decode(base64Image),
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
       ),
     );
   }
